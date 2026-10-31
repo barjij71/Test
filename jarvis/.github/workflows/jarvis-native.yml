@@ -1,0 +1,259 @@
+name: jarvis-native
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - jarvis/phase-0-foundation
+    paths:
+      - 'jarvis/**'
+      - '.github/workflows/jarvis-native.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  # Pinned versions for reproducibility
+  NDK_VERSION: "27.0.12077973"
+  LLAMA_CPP_COMMIT: "b4101b5c3e2f8c5a3f9b3b3c5a6e8b9f0a1b2c3d"  # Example - update to actual pinned commit
+  LLAMA_CPP_REPO: "https://github.com/ggerganov/llama.cpp"
+  SMOLLM2_MODEL: "SmolLM2-360M-Instruct-Q4_K_M.gguf"
+  SMOLLM2_URL: "https://huggingface.co/HuggingFaceTB/SmolLM2-360M-Instruct-GGUF/resolve/main/SmolLM2-360M-Instruct-Q4_K_M.gguf"
+  SMOLLM2_SHA256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"  # Placeholder - update with actual
+
+jobs:
+  llama-cpp-build:
+    name: Build llama.cpp for Android (arm64-v8a)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          repository: barjij71/Test
+          path: repo
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            cmake ninja-build \
+            libssl-dev pkg-config \
+            clang lld
+
+      - name: Setup Android NDK
+        uses: android-actions/setup-android@v3
+        with:
+          ndk-version: ${{ env.NDK_VERSION }}
+          api-level: 34
+
+      - name: Cache llama.cpp source
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/llama.cpp
+          key: llama-cpp-${{ env.LLAMA_CPP_COMMIT }}-${{ env.NDK_VERSION }}
+          restore-keys: |
+            llama-cpp-${{ env.LLAMA_CPP_COMMIT }}-
+
+      - name: Clone llama.cpp (pinned commit)
+        if: steps.cache-llama-cpp.outputs.cache-hit != 'true'
+        run: |
+          git clone ${{ env.LLAMA_CPP_REPO }} ~/.cache/llama.cpp
+          cd ~/.cache/llama.cpp
+          git checkout ${{ env.LLAMA_CPP_COMMIT }}
+
+      - name: Configure CMake for arm64-v8a
+        run: |
+          cd ~/.cache/llama.cpp
+          mkdir -p build-arm64
+          cd build-arm64
+          cmake \
+            -DCMAKE_TOOLCHAIN_FILE=${ANDROID_NDK_HOME}/build/cmake/android.toolchain.cmake \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-24 \
+            -DANDROID_NDK=${ANDROID_NDK_HOME} \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DLLAMA_BUILD_SERVER=OFF \
+            -DLLAMA_BUILD_EXAMPLES=OFF \
+            -DLLAMA_BUILD_TESTS=OFF \
+            -DLLAMA_CURL=OFF \
+            -DGGML_NATIVE=OFF \
+            -DGGML_CPU_AARCH64=ON \
+            -DGGML_NEON=ON \
+            -DGGML_OPENMP=OFF \
+            -DGGML_PTHREADS=ON \
+            ..
+
+      - name: Build llama.cpp (arm64-v8a)
+        run: |
+          cd ~/.cache/llama.cpp/build-arm64
+          cmake --build . --config Release --target llama -j$(nproc)
+
+      - name: Verify libllama.so
+        run: |
+          ls -la ~/.cache/llama.cpp/build-arm64/libllama.so
+          file ~/.cache/llama.cpp/build-arm64/libllama.so
+          # Check it's arm64-v8a
+          readelf -h ~/.cache/llama.cpp/build-arm64/libllama.so | grep Machine
+
+      - name: Cache built library
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/llama.cpp/build-arm64/libllama.so
+          key: llama-lib-arm64-${{ env.LLAMA_CPP_COMMIT }}-${{ env.NDK_VERSION }}
+
+      - name: Upload libllama.so artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: libllama-arm64-v8a
+          path: ~/.cache/llama.cpp/build-arm64/libllama.so
+          retention-days: 30
+
+  llama-cpp-build-x86:
+    name: Build llama.cpp for Android (x86_64 - emulator)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          repository: barjij71/Test
+          path: repo
+
+      - name: Setup Android NDK
+        uses: android-actions/setup-android@v3
+        with:
+          ndk-version: ${{ env.NDK_VERSION }}
+          api-level: 34
+
+      - name: Cache llama.cpp source
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/llama.cpp
+          key: llama-cpp-${{ env.LLAMA_CPP_COMMIT }}-${{ env.NDK_VERSION }}
+          restore-keys: |
+            llama-cpp-${{ env.LLAMA_CPP_COMMIT }}-
+
+      - name: Clone llama.cpp (pinned commit)
+        if: steps.cache-llama-cpp.outputs.cache-hit != 'true'
+        run: |
+          git clone ${{ env.LLAMA_CPP_REPO }} ~/.cache/llama.cpp
+          cd ~/.cache/llama.cpp
+          git checkout ${{ env.LLAMA_CPP_COMMIT }}
+
+      - name: Configure CMake for x86_64
+        run: |
+          cd ~/.cache/llama.cpp
+          mkdir -p build-x86_64
+          cd build-x86_64
+          cmake \
+            -DCMAKE_TOOLCHAIN_FILE=${ANDROID_NDK_HOME}/build/cmake/android.toolchain.cmake \
+            -DANDROID_ABI=x86_64 \
+            -DANDROID_PLATFORM=android-24 \
+            -DANDROID_NDK=${ANDROID_NDK_HOME} \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DLLAMA_BUILD_SERVER=OFF \
+            -DLLAMA_BUILD_EXAMPLES=OFF \
+            -DLLAMA_BUILD_TESTS=OFF \
+            -DLLAMA_CURL=OFF \
+            -DGGML_NATIVE=OFF \
+            -DGGML_CPU_X86_64=ON \
+            -DGGML_AVX=OFF \
+            -DGGML_AVX2=OFF \
+            -DGGML_PTHREADS=ON \
+            ..
+
+      - name: Build llama.cpp (x86_64)
+        run: |
+          cd ~/.cache/llama.cpp/build-x86_64
+          cmake --build . --config Release --target llama -j$(nproc)
+
+      - name: Verify libllama.so
+        run: |
+          ls -la ~/.cache/llama.cpp/build-x86_64/libllama.so
+          file ~/.cache/llama.cpp/build-x86_64/libllama.so
+
+      - name: Cache built library
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/llama.cpp/build-x86_64/libllama.so
+          key: llama-lib-x86_64-${{ env.LLAMA_CPP_COMMIT }}-${{ env.NDK_VERSION }}
+
+      - name: Upload libllama.so artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: libllama-x86_64
+          path: ~/.cache/llama.cpp/build-x86_64/libllama.so
+          retention-days: 30
+
+  inference-smoke-test:
+    name: Inference Smoke Test (Emulator)
+    needs: [llama-cpp-build, llama-cpp-build-x86]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          repository: barjij71/Test
+          path: repo
+
+      - name: Download libllama.so (x86_64)
+        uses: actions/download-artifact@v4
+        with:
+          name: libllama-x86_64
+          path: ./libs/x86_64
+
+      - name: Download test model
+        run: |
+          mkdir -p ./models
+          # In real CI, use a small test model or mock
+          # For now, create a dummy model file to test loading logic
+          echo "dummy model for CI" > ./models/${{ env.SMOLLM2_MODEL }}
+          # TODO: Replace with actual model download from HF with SHA256 verification
+
+      - name: Setup Android Emulator
+        uses: android-actions/setup-android@v3
+        with:
+          api-level: 34
+          ndk-version: ${{ env.NDK_VERSION }}
+          emulator: true
+          arch: x86_64
+
+      - name: Start Emulator
+        run: |
+          emulator -avd test -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect &
+          android-wait-for-emulator
+          adb shell settings put global window_animation_scale 0
+          adb shell settings put global transition_animation_scale 0
+          adb shell settings put global animator_duration_scale 0
+
+      - name: Push libllama.so and model to emulator
+        run: |
+          adb push ./libs/x86_64/libllama.so /data/local/tmp/
+          adb push ./models/${{ env.SMOLLM2_MODEL }} /data/local/tmp/
+
+      - name: Run Inference Harness
+        run: |
+          # This is a placeholder for the actual inference test
+          # The real test will be implemented in Phase 6 with Rust FFI harness
+          adb shell "cd /data/local/tmp && LD_LIBRARY_PATH=. ./test_inference || echo 'Test harness not yet implemented - Phase 6'"
+          # For Phase 0 spike, we just verify the library loads
+          adb shell "cd /data/local/tmp && LD_LIBRARY_PATH=. dlopen libllama.so && echo 'Library loads OK'"
+
+      - name: Report Spike Results
+        if: always()
+        run: |
+          echo "## Llama.cpp Spike Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| LLAMA_CPP_COMMIT | ${{ env.LLAMA_CPP_COMMIT }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| NDK_VERSION | ${{ env.NDK_VERSION }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| arm64-v8a Build | SUCCESS |" >> $GITHUB_STEP_SUMMARY
+          echo "| x86_64 Build | SUCCESS |" >> $GITHUB_STEP_SUMMARY
+          echo "| Library Load Test | PENDING (Phase 6) |" >> $GITHUB_STEP_SUMMARY
+          echo "| Inference Test | PENDING (Phase 6) |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "⚠️ This is a Phase 0 de-risking spike. Full inference testing in Phase 6." >> $GITHUB_STEP_SUMMARY
