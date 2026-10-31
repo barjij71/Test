@@ -1,0 +1,148 @@
+name: jarvis-integration
+
+on:
+  push:
+    branches:
+      - 'jarvis/**'
+    paths:
+      - 'jarvis/**'
+      - '.github/workflows/jarvis-integration.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'jarvis/**'
+      - '.github/workflows/jarvis-integration.yml'
+
+permissions:
+  contents: read
+  actions: read
+  checks: write
+
+env:
+  NODE_VERSION: "22"
+
+jobs:
+  mcp-mock-tests:
+    name: MCP Mock Server Integration Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: jarvis
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: jarvis/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Start Mock MCP Server
+        run: |
+          # Placeholder - will implement in Phase 2
+          echo "Mock MCP server not yet implemented - Phase 2"
+          # npx mcp-mock-server --port 3001 &
+          # sleep 2
+
+      - name: Run MCP Integration Tests
+        run: |
+          # Placeholder - will implement in Phase 2
+          echo "MCP integration tests not yet implemented - Phase 2"
+          # npm run test:integration:mcp
+
+      - name: Stop Mock MCP Server
+        if: always()
+        run: |
+          # kill $(lsof -t -i:3001) 2>/dev/null || true
+
+  telegram-mock-tests:
+    name: Telegram Mock Bot API Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: jarvis
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: jarvis/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Start Mock Telegram Bot API
+        run: |
+          # Placeholder - will implement in Phase 4
+          echo "Mock Telegram Bot API not yet implemented - Phase 4"
+          # npx telegram-mock-api --port 8081 &
+          # sleep 2
+
+      - name: Run Telegram Integration Tests
+        run: |
+          # Placeholder - will implement in Phase 4
+          echo "Telegram integration tests not yet implemented - Phase 4"
+          # npm run test:integration:telegram
+
+      - name: Stop Mock Telegram Bot API
+        if: always()
+        run: |
+          # kill $(lsof -t -i:8081) 2>/dev/null || true
+
+  hermes-sync-tests:
+    name: Hermes Sync Integration Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: jarvis
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: jarvis/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Hermes Sync Tests
+        run: |
+          # Placeholder - will implement in Phase 3
+          echo "Hermes sync tests not yet implemented - Phase 3"
+          # npm run test:integration:hermes-sync
+
+  summary:
+    name: Integration Summary
+    runs-on: ubuntu-latest
+    needs: [mcp-mock-tests, telegram-mock-tests, hermes-sync-tests]
+    if: always()
+    timeout-minutes: 5
+    steps:
+      - name: Report Status
+        run: |
+          echo "## Integration Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Test Suite | Status | Phase |" >> $GITHUB_STEP_SUMMARY
+          echo "|------------|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| MCP Mock Server | ${{ needs.mcp-mock-tests.result }} | 2 |" >> $GITHUB_STEP_SUMMARY
+          echo "| Telegram Mock API | ${{ needs.telegram-mock-tests.result }} | 4 |" >> $GITHUB_STEP_SUMMARY
+          echo "| Hermes Sync | ${{ needs.hermes-sync-tests.result }} | 3 |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "⚠️ All integration tests are placeholders for future phases." >> $GITHUB_STEP_SUMMARY

@@ -1,0 +1,26 @@
+PocketStrike Feature,JARVIS Equivalent,Gap,Effort (days),Risk,License Status,Notes
+MCP Client (Dart),None — new module,Full gap,10,High,UNKNOWN — clean-room,MCP spec 2025-06-18; Streamable HTTP + SSE; AuthProvider interface
+Hermes Memory (USER.md),None — new memory system,Full gap,8,Medium,UNKNOWN — clean-room,YAML front-matter + Markdown; versioning; atomic writes
+Hermes Memory (MEMORY.md),store.ts + vectorStore.ts,Partial — new file format,6,Medium,UNKNOWN — clean-room,Migrate keyword facts; index into vectorStore
+Hermes Memory (SOUL.md),None — new,Full gap,4,Low,UNKNOWN — clean-room,Write-protected; user edits only; system prompt injection
+Telegram Bridge,None — new module,Full gap,10,High,UNKNOWN — clean-room,Long polling (native); webhook optional; command router to agents
+Local File Tools (SAF),None — new tools,Full gap,6,Medium,UNKNOWN — clean-room,SAF picker; Kotlin ContentResolver; native bridge
+Offline GGUF Inference,None — new module,Full gap,20,High,llama.cpp = MIT,Vendor llama.cpp submodule; ARM NEON; Rust FFI; Kotlin bridge
+Model Downloader,None — new module,Full gap,8,Medium,UNKNOWN — clean-room,WorkManager + Foreground Service; Hugging Face API; SHA256 verify
+Image Generation,None — new module,Full gap,12,High,UNKNOWN — clean-room,Cloud providers only (Phase 2+); no local diffusion in scope
+Cloud Provider Failover,Partial (barjij71/codex branch),Partial — port from branch,5,Medium,MIT (baseline),Ordered provider list; automatic failover; Keystore encryption
+Voice TTS (Natural),WebView SpeechSynthesis (baseline),Replace with native TTS,5,Medium,MIT (Android),ADR-0002: Android native TTS primary, cloud fallback
+Wake Word,Porcupine (baseline),Already implemented,0,Low,MIT,Module-level singleton; keep as-is
+Specialist Agents,6 agents (baseline),Already implemented,0,Low,MIT,Research, Phone, Files, Scheduler, Content, Desktop
+PC/TV Control,Implemented (baseline),Already implemented,0,Low,MIT,Keep; extend with MCP tools
+Memory Sync (phone↔PC),sync.ts (baseline),Extend for Hermes,4,Low,MIT,CBOR payloads; LWW for USER/MEMORY; manual merge SOUL
+Procedural Learning,proceduralLearning.ts (baseline),Already implemented,0,Low,MIT,Keep as-is
+Keyword Memory,store.ts (baseline),Migrate to USER.md,3,Low,MIT,One-time migration; USER.md becomes source of truth
+Semantic Memory,vectorStore.ts (baseline),Index MEMORY.md facts,3,Low,MIT,Extend indexing pipeline
+Settings UI,Basic (baseline),Extend for new features,8,Low,MIT,Glassmorphism/Cyberpunk theme; RTL Arabic; accessibility
+Network Hardening,Basic (baseline),mTLS, pinning, redaction,6,High,MIT,ADR-0001; OkHttp pinning; rustls custom verifier
+Observability,None — new,Full gap,5,Medium,MIT,Structured logs; OpenTelemetry optional; log scrubbing tests
+CI/CD Pipeline,Partial (baseline),Extend for new phases,5,Low,MIT,jarvis-*.yml workflows; APK signing; emulator tests
+De-risk Spike (llama.cpp),None — CI only,Full gap,5,High,llama.cpp = MIT,Cross-compile arm64-v8a; load SmolLM2-360M-Q4_K_M; report metrics
+License Audit,NOTICE.md (this phase),Complete,2,Low,N/A,All deps permissive; PocketStrike UNKNOWN — clean-room policy
+Threat Model,SECURITY.md (this phase),Complete,3,Medium,N/A,Assets, trust boundaries, threats for each new capability

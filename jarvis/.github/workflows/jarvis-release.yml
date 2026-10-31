@@ -1,0 +1,133 @@
+name: jarvis-release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g., v2.6.0-portable)'
+        required: true
+        type: string
+      tag:
+        description: 'Git tag to create'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  actions: read
+  id-token: write
+
+env:
+  NODE_VERSION: "22"
+  RUST_VERSION: "stable"
+  JDK_VERSION: "17"
+  NDK_VERSION: "27.0.12077973"
+
+jobs:
+  release:
+    name: Build & Sign Release APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: release
+    defaults:
+      run:
+        working-directory: jarvis
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: jarvis/package-lock.json
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: ${{ env.JDK_VERSION }}
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          api-level: 34
+          ndk-version: ${{ env.NDK_VERSION }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Decode Keystore
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > release.keystore
+          echo "Keystore decoded"
+
+      - name: Configure Signing
+        run: |
+          cat > signing.properties <<EOF
+          storeFile=release.keystore
+          storePassword=${{ secrets.KEYSTORE_PASSWORD }}
+          keyAlias=${{ secrets.KEY_ALIAS }}
+          keyPassword=${{ secrets.KEY_PASSWORD }}
+          EOF
+
+      - name: Update Version
+        run: |
+          # Update package.json
+          npm version ${{ github.event.inputs.version }} --no-git-tag-version
+          # Update tauri.conf.json
+          # This would be done via a script or sed
+          echo "Version updated to ${{ github.event.inputs.version }}"
+
+      - name: Build Release APK
+        run: |
+          npm run tauri android build --release --apk --target aarch64
+          # Alternative:
+          # cd src-tauri && cargo tauri android build --release --apk --target aarch64-linux-android
+
+      - name: Find Release APK
+        id: find-apk
+        run: |
+          APK_PATH=$(find src-tauri/gen/android/app/build/outputs/apk -name "*release*.apk" | head -1)
+          if [ -z "$APK_PATH" ]; then
+            echo "Release APK not found"
+            exit 1
+          fi
+          echo "apk_path=$APK_PATH" >> $GITHUB_OUTPUT
+
+      - name: Verify APK Signature
+        run: |
+          apksigner verify --print-certs ${{ steps.find-apk.outputs.apk_path }}
+
+      - name: Create Git Tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag ${{ github.event.inputs.tag }}
+          git push origin ${{ github.event.inputs.tag }}
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag }}
+          name: JARVIS ${{ github.event.inputs.version }}
+          body_path: jarvis/RELEASE_NOTES.md
+          files: ${{ steps.find-apk.outputs.apk_path }}
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Cleanup Keystore
+        if: always()
+        run: |
+          rm -f release.keystore signing.properties
+          echo "Keystore cleaned up"

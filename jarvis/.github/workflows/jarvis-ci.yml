@@ -1,0 +1,235 @@
+name: jarvis-ci
+
+on:
+  push:
+    branches:
+      - 'jarvis/**'
+    paths:
+      - 'jarvis/**'
+      - '.github/workflows/jarvis-ci.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'jarvis/**'
+      - '.github/workflows/jarvis-ci.yml'
+
+permissions:
+  contents: read
+  actions: read
+  checks: write
+
+env:
+  NODE_VERSION: "22"
+  RUST_VERSION: "stable"
+  JDK_VERSION: "17"
+  NDK_VERSION: "27.0.12077973"
+
+jobs:
+  typecheck:
+    name: TypeCheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: jarvis
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: jarvis/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run TypeCheck
+        run: npm run typecheck
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: jarvis
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: jarvis/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ESLint
+        run: npm run lint
+
+      - name: Run clippy (Rust)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+          targets: aarch64-linux-android, x86_64-linux-android
+      - run: cd jarvis/src-tauri && cargo clippy --target aarch64-linux-android -- -D warnings
+      - run: cd jarvis/src-tauri && cargo clippy --target x86_64-linux-android -- -D warnings
+
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: jarvis
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: jarvis/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Unit Tests
+        run: npm test -- --coverage --passWithNoTests
+
+      - name: Check Coverage Thresholds
+        run: |
+          # Coverage thresholds: 90% for brain/mcp/, 95% diff coverage
+          # This is a placeholder - actual implementation depends on coverage tool
+          echo "Coverage check - implement with jest/coverage thresholds"
+
+  graphify:
+    name: Graphify Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: jarvis
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: jarvis/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run graphify update
+        run: npx graphify update . || echo "graphify not configured - will implement in Phase 1"
+
+      - name: Check for changes
+        run: |
+          if ! git diff --quiet; then
+            echo "graphify generated changes - commit them in PR"
+            git diff --stat
+            exit 1
+          fi
+
+  build-apk:
+    name: Build Debug APK (arm64)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: jarvis
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: jarvis/package-lock.json
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android, x86_64-linux-android
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: ${{ env.JDK_VERSION }}
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          api-level: 34
+          ndk-version: ${{ env.NDK_VERSION }}
+          cmdline-tools: latest
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Debug APK
+        run: |
+          npm run tauri android build --debug --apk --target aarch64
+          # Alternative if above fails:
+          # cd src-tauri && cargo tauri android build --debug --apk --target aarch64-linux-android
+
+      - name: Find APK
+        id: find-apk
+        run: |
+          APK_PATH=$(find src-tauri/gen/android/app/build/outputs/apk -name "*.apk" | head -1)
+          if [ -z "$APK_PATH" ]; then
+            echo "APK not found"
+            exit 1
+          fi
+          echo "apk_path=$APK_PATH" >> $GITHUB_OUTPUT
+          echo "Found APK: $APK_PATH"
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug-arm64.apk
+          path: ${{ steps.find-apk.outputs.apk_path }}
+          retention-days: 30
+
+  summary:
+    name: CI Summary
+    runs-on: ubuntu-latest
+    needs: [typecheck, lint, unit-tests, graphify, build-apk]
+    if: always()
+    timeout-minutes: 5
+    steps:
+      - name: Report Status
+        run: |
+          echo "## CI Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Job | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| TypeCheck | ${{ needs.typecheck.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Lint | ${{ needs.lint.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Unit Tests | ${{ needs.unit-tests.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Graphify | ${{ needs.graphify.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Build APK | ${{ needs.build-apk.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ needs.build-apk.result }}" = "success" ]; then
+            echo "✅ APK artifact uploaded" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ APK build failed" >> $GITHUB_STEP_SUMMARY
+          fi
